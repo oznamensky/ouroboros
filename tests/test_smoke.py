@@ -429,4 +429,8 @@ def test_function_count_reasonable():
 class TestPrePushGate:
     """Tests for pre-push test gate in git.py."""
 
-    def test_run_p
+    def test_run_prepush_gate(self):
+        """The pre-push gate runs successfully."""
+        from supervisor.git_ops import run_prepush_gate
+        # This should complete without raising
+        run_prepush_gate()
