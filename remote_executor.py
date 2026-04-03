@@ -3,6 +3,8 @@
 Remote SSH Executor - HTTP Server
 Accepts commands from Ouroboros and executes them on the server.
 For installing V2Ray + WebSocket + TLS for Telegram proxy without VPN.
+
+SECURITY: All credentials and tokens must be provided via environment variables.
 """
 
 import http.server
@@ -12,13 +14,20 @@ import subprocess
 import sys
 import threading
 import time
+import os
 from urllib.parse import urlparse, parse_qs
 
-# Configuration
-PORT = 8080
-HOST = '0.0.0.0'  # Listen on all interfaces
-TOKEN = 'ouroboros-secret-token-2026'  # Change this for production
+# Configuration from environment variables (secure)
+PORT = int(os.getenv('REMOTE_EXECUTOR_PORT', '8080'))
+HOST = os.getenv('REMOTE_EXECUTOR_HOST', '0.0.0.0')
+TOKEN = os.getenv('REMOTE_EXECUTOR_TOKEN')  # Must be set via environment
 AUTH_KEY = 'token'
+
+# Required: Set REMOTE_EXECUTOR_TOKEN environment variable
+if not TOKEN:
+    print("⚠️  SECURITY ERROR: REMOTE_EXECUTOR_TOKEN environment variable not set!")
+    print("   Set it with: export REMOTE_EXECUTOR_TOKEN='your-secret-token'")
+    sys.exit(1)
 
 class RemoteExecutorHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -97,8 +106,8 @@ def run_server():
     """Start the HTTP server"""
     with socketserver.TCPServer((HOST, PORT), RemoteExecutorHandler) as httpd:
         print(f"Remote Executor Server started on http://{HOST}:{PORT}")
-        print(f"Authentication token: {TOKEN}")
-        print(f"Use: POST http://localhost:{PORT}/?token={TOKEN}")
+        print(f"Authentication token: (from environment)")
+        print(f"Use: POST http://localhost:{PORT}/?token=YOUR_TOKEN")
         print("Press Ctrl+C to stop")
         try:
             httpd.serve_forever()
@@ -109,6 +118,5 @@ def run_server():
 if __name__ == '__main__':
     print("Remote SSH Executor - Starting...")
     print(f"Listening on: http://{HOST}:{PORT}")
-    print(f"Auth token: {TOKEN}")
     print("-" * 50)
     run_server()
