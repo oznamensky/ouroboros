@@ -88,6 +88,8 @@ CORE_TOOL_NAMES = {
     "request_restart", "promote_to_stable",
     "knowledge_read", "knowledge_write",
     "browse_page", "browser_action", "analyze_screenshot",
+    # SSH tools for remote server access
+    "ssh_connect", "ssh_run_command", "ssh_fix_mtproxy",
 }
 
 
