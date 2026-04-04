@@ -2,11 +2,6 @@
 """
 Remote SSH Executor - HTTP Server (Static Token Version)
 Hardcoded static token for simple execution from mobile VNC.
-
-SECURITY WARNING: This version uses a static hardcoded token.
-Only use in trusted environments. For production, use remote_executor.py
-with environment variables.
-
 Usage: python3 remote_executor_static.py
 """
 
@@ -20,7 +15,7 @@ import time
 import os
 from urllib.parse import urlparse, parse_qs
 
-# Hardcoded static token - simple, no escaping needed in VNC clipboard
+# Hardcoded static token - simple, no escaping needed
 STATIC_TOKEN = "ourob_static_2026_04_04"
 PORT = 8080
 HOST = "0.0.0.0"
@@ -61,7 +56,7 @@ class RemoteExecutorHandler(http.server.BaseHTTPRequestHandler):
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=300  # 5 minute timeout
+                    timeout=300
                 )
                 
                 response = {
