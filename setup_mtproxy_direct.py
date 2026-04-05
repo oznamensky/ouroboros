@@ -6,6 +6,7 @@ No owner intervention required.
 import paramiko
 import time
 import sys
+import random
 
 # SSH credentials (from ssh_setup.py)
 HOST = "91.108.237.229"
@@ -29,17 +30,20 @@ def main():
         client.connect(HOST, username=USERNAME, password=PASSWORD, timeout=10)
         print("Connected successfully.")
         
-        # Clone MTProxy repo if not exists
+        # Clone MTProxy repo (telegramdesktop version)
         print("Cloning MTProxy repository...")
-        status, out, err = run_ssh_command("cd /root && git clone https://github.com/telegramdesktop/mtproxy.git 2>/dev/null || echo 'Already cloned'", client)
-        if err:
-            print(f"Clone warning: {err}")
+        status, out, err = run_ssh_command("cd /root && rm -rf mtproxy MTProxy && git clone https://github.com/telegramdesktop/mtproxy.git mtproxy", client)
+        if status != 0:
+            print(f"Clone error: {err}")
+            sys.exit(1)
+        print(f"Clone output: {out}")
         
         # Build MTProxy
         print("Building MTProxy...")
         status, out, err = run_ssh_command("cd /root/mtproxy && make", client)
         if status != 0:
             print(f"Build error: {err}")
+            print(f"Build output: {out}")
             sys.exit(1)
         print(f"Build output: {out}")
         
@@ -63,18 +67,17 @@ def main():
         
         # Get a random working domain (non-telegram)
         fake_domains = ["google.com", "cloudflare.com", "github.com", "yandex.ru", "ok.ru", "mail.ru", "vk.com", "mozilla.org"]
-        import random
         random_domain = random.choice(fake_domains)
         print(f"Using fake domain: {random_domain}")
         
         # Start MTProxy with Fake TLS on port 443
         print("Starting MTProxy...")
         # Correct syntax: -p443 -H443 -S<secret> -D<domain> -d (daemonize)
-        cmd = f"cd /root/mtproxy && nohup ./objs/bin/mtproto-proxy -p443 -H443 -S{secret} -D{random_domain} -d > /root/mtproxy.log 2>&1 & echo $!"
-        status, pid, err = run_ssh_command(cmd, client)
+        cmd = f"cd /root/mtproxy && nohup ./objs/bin/mtproto-proxy -p443 -H443 -S{secret} -D{random_domain} -d > /root/mtproxy.log 2>&1 &"
+        status, out, err = run_ssh_command(cmd, client)
         if status != 0:
             print(f"Start error: {err}")
-        print(f"Started with PID output: {pid}")
+            print(f"Start output: {out}")
         
         # Wait for service to bind
         print("Waiting for MTProxy to start...")
