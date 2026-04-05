@@ -42,9 +42,9 @@ def main():
         print(f"Secret: {secret}")
         
         # 3. Start MTProxy with correct parameters
-        # Remove -f flag (foreground) since we're using nohup with &
+        # Note: -d (lowercase) = daemonize, -D (uppercase) = domain (for TLS transport)
         print("\n=== Starting MTProxy ===")
-        cmd = f"nohup /root/mtproxy/objs/bin/mtproto-proxy -p 19196 -H 19196 -S {secret} -D > /root/mtproxy.log 2>&1 &"
+        cmd = f"nohup /root/mtproxy/objs/bin/mtproto-proxy -p 19196 -H 19196 -S {secret} -d > /root/mtproxy.log 2>&1 &"
         run_command(ssh, cmd)
         
         # Wait for process to start
