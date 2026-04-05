@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restart MTProxy on remote server via SSH"""
+"""Restart MTProxy on remote server via SSH with correct Telegram config"""
 import paramiko
 import time
 import sys
@@ -35,24 +35,20 @@ def main():
         run_command(ssh, "pkill -f mtproto-proxy")
         time.sleep(2)
         
-        # 2. Generate new secret (32 hex digits = 128 bits)
+        # 2. Generate new secret (16 bytes = 32 hex digits)
         print("\n=== Generating secret ===")
-        stdin, stdout, stderr = ssh.exec_command("openssl rand -hex 16")
+        stdin, stdout, stderr = ssh.exec_command("head -c 16 /dev/urandom | xxd -ps")
         secret = stdout.read().decode().strip()
         print(f"Secret: {secret}")
         
-        # 3. Create config file with Fake TLS (domain mode)
-        print("\n=== Creating config file ===")
-        config_content = f"ddp-server 91.108.237.229\n"
-        config_content += f"secret {secret}\n"
-        config_content += f"port 19196\n"
+        # 3. Download Telegram proxy secret and config
+        print("\n=== Downloading Telegram proxy files ===")
+        run_command(ssh, "cd /root/MTProxy && curl -s https://core.telegram.org/getProxySecret -o proxy-secret")
+        run_command(ssh, "cd /root/MTProxy && curl -s https://core.telegram.org/getProxyConfig -o proxy-multi.conf")
         
-        # Upload config
-        run_command(ssh, f"cat > /root/mtproxy_config.txt << 'EOF'\n{config_content}\nEOF")
-        
-        # 4. Start MTProxy with config file
+        # 4. Start MTProxy with correct parameters
         print("\n=== Starting MTProxy ===")
-        cmd = f"nohup /root/mtproxy/objs/bin/mtproto-proxy -p 19196 -H 19196 -S {secret} -d /root/mtproxy_config.txt > /root/mtproxy.log 2>&1 &"
+        cmd = f"cd /root/MTProxy && nohup ./objs/bin/mtproto-proxy -u nobody -p 19196 -H 19196 -S {secret} --aes-pwd proxy-secret proxy-multi.conf -M 1 -d > /root/mtproxy.log 2>&1 &"
         run_command(ssh, cmd)
         
         # Wait for process to start
@@ -78,7 +74,7 @@ def main():
         else:
             print("✗ Port 19196 is NOT listening!")
         
-        # 7. Generate Telegram link
+        # 7. Generate Telegram link (no Fake TLS, just direct MTProto)
         link = f"tg://proxy?server=91.108.237.229&port=19196&secret={secret}"
         print(f"\n=== Generated Telegram link ===")
         print(link)
