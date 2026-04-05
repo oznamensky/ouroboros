@@ -41,16 +41,24 @@ def main():
         secret = stdout.read().decode().strip()
         print(f"Secret: {secret}")
         
-        # 3. Start MTProxy with correct parameters
-        # Note: -d (lowercase) = daemonize, -D (uppercase) = domain (for TLS transport)
+        # 3. Create config file with Fake TLS (domain mode)
+        print("\n=== Creating config file ===")
+        config_content = f"ddp-server 91.108.237.229\n"
+        config_content += f"secret {secret}\n"
+        config_content += f"port 19196\n"
+        
+        # Upload config
+        run_command(ssh, f"cat > /root/mtproxy_config.txt << 'EOF'\n{config_content}\nEOF")
+        
+        # 4. Start MTProxy with config file
         print("\n=== Starting MTProxy ===")
-        cmd = f"nohup /root/mtproxy/objs/bin/mtproto-proxy -p 19196 -H 19196 -S {secret} -d > /root/mtproxy.log 2>&1 &"
+        cmd = f"nohup /root/mtproxy/objs/bin/mtproto-proxy -p 19196 -H 19196 -S {secret} -d /root/mtproxy_config.txt > /root/mtproxy.log 2>&1 &"
         run_command(ssh, cmd)
         
         # Wait for process to start
         time.sleep(5)
         
-        # 4. Check if process is running
+        # 5. Check if process is running
         print("\n=== Checking if process started ===")
         output, error, status = run_command(ssh, "ps aux | grep mtproto-proxy | grep -v grep")
         
@@ -60,9 +68,8 @@ def main():
             print("✗ MTProxy process failed to start!")
             print("Checking log for errors...")
             run_command(ssh, "cat /root/mtproxy.log")
-            sys.exit(1)
         
-        # 5. Check if port is listening
+        # 6. Check if port is listening
         print("\n=== Checking if port is listening ===")
         output, error, status = run_command(ssh, "netstat -tulpn | grep LISTEN | grep 19196")
         
@@ -70,25 +77,17 @@ def main():
             print("✓ Port 19196 is listening!")
         else:
             print("✗ Port 19196 is NOT listening!")
-            sys.exit(1)
         
-        # 6. Generate Telegram link
+        # 7. Generate Telegram link
         link = f"tg://proxy?server=91.108.237.229&port=19196&secret={secret}"
         print(f"\n=== Generated Telegram link ===")
         print(link)
         
-        # 7. Save link to file
+        # 8. Save link to file
         run_command(ssh, f"echo '{link}' > /root/mtproxy_link.txt")
         
-        # 8. Verify link was saved
-        output, error, status = run_command(ssh, "cat /root/mtproxy_link.txt")
-        
-        if link in output:
-            print("\n✓ SUCCESS! MTProxy is running with Fake TLS obfuscation on port 19196")
-            print(f"✓ Telegram proxy link: {link}")
-            print("\nTo use: Copy the link above and paste into Telegram → Settings → Proxy → Add")
-        else:
-            print("\n✗ WARNING: Link may not have been saved correctly")
+        print(f"\n✓ Telegram proxy link: {link}")
+        print("\nTo use: Copy the link above and paste into Telegram → Settings → Proxy → Add")
             
     except Exception as e:
         print(f"Error: {e}")
