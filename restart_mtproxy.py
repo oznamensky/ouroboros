@@ -30,31 +30,39 @@ def main():
         ssh.connect(HOST, username=USER, password=PASS, timeout=30)
         print("Connected!")
         
-        # 1. Stop existing MTProxy instances
+        # 1. Clone MTProxy if not exists
+        print("\n=== Cloning MTProxy repository ===")
+        run_command(ssh, "cd /root && git clone https://github.com/TelegramMessenger/MTProxy.git")
+        
+        # 2. Build MTProxy
+        print("\n=== Building MTProxy ===")
+        run_command(ssh, "cd /root/MTProxy && make")
+        
+        # 3. Stop existing MTProxy instances
         print("\n=== Stopping existing MTProxy ===")
         run_command(ssh, "pkill -f mtproto-proxy")
         time.sleep(2)
         
-        # 2. Generate new secret (16 bytes = 32 hex digits)
+        # 4. Generate new secret (16 bytes = 32 hex digits)
         print("\n=== Generating secret ===")
         stdin, stdout, stderr = ssh.exec_command("head -c 16 /dev/urandom | xxd -ps")
         secret = stdout.read().decode().strip()
         print(f"Secret: {secret}")
         
-        # 3. Download Telegram proxy secret and config
+        # 5. Download Telegram proxy secret and config
         print("\n=== Downloading Telegram proxy files ===")
         run_command(ssh, "cd /root/MTProxy && curl -s https://core.telegram.org/getProxySecret -o proxy-secret")
         run_command(ssh, "cd /root/MTProxy && curl -s https://core.telegram.org/getProxyConfig -o proxy-multi.conf")
         
-        # 4. Start MTProxy with correct parameters
+        # 6. Start MTProxy with correct parameters
         print("\n=== Starting MTProxy ===")
-        cmd = f"cd /root/MTProxy && nohup ./objs/bin/mtproto-proxy -u nobody -p 19196 -H 19196 -S {secret} --aes-pwd proxy-secret proxy-multi.conf -M 1 -d > /root/mtproxy.log 2>&1 &"
+        cmd = f"cd /root/MTProxy && nohup ./objs/bin/mtproto-proxy -u nobody -p 19196 -H 19196 -S {secret} --aes-pwd proxy-secret proxy-multi.conf -M 1 > /root/mtproxy.log 2>&1 &"
         run_command(ssh, cmd)
         
         # Wait for process to start
         time.sleep(5)
         
-        # 5. Check if process is running
+        # 7. Check if process is running
         print("\n=== Checking if process started ===")
         output, error, status = run_command(ssh, "ps aux | grep mtproto-proxy | grep -v grep")
         
@@ -65,7 +73,7 @@ def main():
             print("Checking log for errors...")
             run_command(ssh, "cat /root/mtproxy.log")
         
-        # 6. Check if port is listening
+        # 8. Check if port is listening
         print("\n=== Checking if port is listening ===")
         output, error, status = run_command(ssh, "netstat -tulpn | grep LISTEN | grep 19196")
         
@@ -74,12 +82,12 @@ def main():
         else:
             print("✗ Port 19196 is NOT listening!")
         
-        # 7. Generate Telegram link (no Fake TLS, just direct MTProto)
+        # 9. Generate Telegram link (no Fake TLS, just direct MTProto)
         link = f"tg://proxy?server=91.108.237.229&port=19196&secret={secret}"
         print(f"\n=== Generated Telegram link ===")
         print(link)
         
-        # 8. Save link to file
+        # 10. Save link to file
         run_command(ssh, f"echo '{link}' > /root/mtproxy_link.txt")
         
         print(f"\n✓ Telegram proxy link: {link}")
