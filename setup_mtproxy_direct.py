@@ -46,6 +46,11 @@ def main():
         print("Stopping nginx...")
         run_ssh_command("systemctl stop nginx 2>/dev/null || true", client)
         
+        # Kill any existing MTProxy processes
+        print("Killing existing MTProxy processes...")
+        run_ssh_command("pkill -f mtproto-proxy 2>/dev/null || true", client)
+        time.sleep(1)
+        
         # Generate secret (32 hex chars = 128-bit)
         print("Generating secret...")
         status, secret, err = run_ssh_command("openssl rand -hex 16", client)
@@ -57,22 +62,28 @@ def main():
         
         # Start MTProxy with Fake TLS on port 443
         print("Starting MTProxy...")
-        # Run in background, capture PID
-        cmd = f"cd /root/MTProxy && nohup ./objs/bin/mtproto-proxy -p 443 -H 443 -S {secret} -f -D > /root/mtproxy.log 2>&1 & echo $!"
-        status, pid, err = run_ssh_command(cmd, client)
+        # Run in background with nohup
+        cmd = f"cd /root/MTProxy && nohup ./objs/bin/mtproto-proxy -p 443 -H 443 -S {secret} -f -D > /root/mtproxy.log 2>&1 &"
+        status, out, err = run_ssh_command(cmd, client)
         if status != 0:
             print(f"Start error: {err}")
-            sys.exit(1)
-        pid = pid.strip()
-        print(f"MTProxy started with PID {pid}")
         
-        # Wait a moment for service to bind
-        time.sleep(2)
+        # Wait for service to bind
+        print("Waiting for MTProxy to start...")
+        time.sleep(3)
         
-        # Verify process is running
-        status, proc_out, err = run_ssh_command(f"ps aux | grep mtproto-proxy | grep -v grep", client)
-        if status != 0 or not proc_out:
-            print("MTProxy process not found. Check logs.")
+        # Check logs
+        status, logs, err = run_ssh_command("tail -20 /root/mtproxy.log", client)
+        print(f"Logs:\n{logs}")
+        
+        # Check if process is running
+        status, proc_out, err = run_ssh_command("ps aux | grep mtproto-proxy | grep -v grep", client)
+        print(f"Process check: {proc_out}")
+        
+        if not proc_out.strip():
+            print("Process not found, checking errors...")
+            status, err_log, _ = run_ssh_command("cat /root/mtproxy.log", client)
+            print(f"Full log:\n{err_log}")
             sys.exit(1)
         
         # Generate Telegram link
@@ -81,6 +92,11 @@ def main():
         print(f"Telegram link: {link}")
         print(f"Secret: {secret}")
         print(f"Server: {HOST}:443")
+        
+        # Test connectivity (basic check)
+        print("\nTesting service...")
+        status, netstat, err = run_ssh_command("netstat -tlnp | grep 443", client)
+        print(f"Port 443 status: {netstat}")
         
         # Save to file for owner
         with open("/content/mtproxy_link.txt", "w") as f:
