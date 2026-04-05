@@ -30,9 +30,17 @@ def main():
         client.connect(HOST, username=USERNAME, password=PASSWORD, timeout=10)
         print("Connected successfully.")
         
-        # Clone MTProxy repo (telegramdesktop version)
+        # Clone MTProxy repo - try multiple sources
         print("Cloning MTProxy repository...")
-        status, out, err = run_ssh_command("cd /root && rm -rf mtproxy MTProxy && git clone https://github.com/telegramdesktop/mtproxy.git mtproxy", client)
+        
+        # Try telegramdesktop first
+        status, out, err = run_ssh_command("cd /root && rm -rf mtproxy MTProxy 2>/dev/null; git clone https://github.com/telegramdesktop/mtproxy.git mtproxy 2>&1", client)
+        if status != 0:
+            print(f"telegramdesktop clone failed: {err}")
+            # Try TelegramMessenger as fallback
+            print("Trying TelegramMessenger repo...")
+            status, out, err = run_ssh_command("cd /root && rm -rf mtproxy MTProxy 2>/dev/null; git clone https://github.com/TelegramMessenger/MTProxy.git mtproxy 2>&1", client)
+        
         if status != 0:
             print(f"Clone error: {err}")
             sys.exit(1)
