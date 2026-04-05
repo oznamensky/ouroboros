@@ -19,27 +19,33 @@ def main():
     try:
         client.connect(HOST, username=USERNAME, password=PASSWORD, timeout=10)
         
-        print("=== Running MTProxy with --help ===")
-        status, out, err = run_ssh_command(client, "/root/mtproxy/objs/bin/mtproto-proxy --help 2>&1 | head -30")
-        print(f"Status: {status}")
-        print(f"Output:\n{out}")
-        print(f"Error:\n{err}")
-        
-        print("\n=== Trying to run with minimal arguments ===")
         # Generate secret
         status, secret, err = run_ssh_command(client, "openssl rand -hex 16")
         print(f"Secret: {secret}")
         
-        # Run with just port and secret
-        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} -d 2>&1"
+        print("\n=== Test 1: No -d flag ===")
+        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} 2>&1"
+        status, out, err = run_ssh_command(client, cmd)
+        print(f"Status: {status}")
+        print(f"Output:\n{out[:500]}")
+        
+        print("\n=== Test 2: With -d 1 ===")
+        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} -d 1 2>&1"
+        status, out, err = run_ssh_command(client, cmd)
+        print(f"Status: {status}")
+        print(f"Output:\n{out[:500]}")
+        
+        print("\n=== Test 3: With --daemonize ===")
+        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} --daemonize 2>&1"
+        status, out, err = run_ssh_command(client, cmd)
+        print(f"Status: {status}")
+        print(f"Output:\n{out[:500]}")
+        
+        print("\n=== Test 4: Check if binary works at all ===")
+        cmd = f"cd /root/mtproxy && ./objs/bin/mtproto-proxy 2>&1 | head -10"
         status, out, err = run_ssh_command(client, cmd)
         print(f"Status: {status}")
         print(f"Output:\n{out}")
-        print(f"Error:\n{err}")
-        
-        # Check if any process is running after that
-        status, procs, err = run_ssh_command(client, "ps aux | grep mtproto-proxy | grep -v grep")
-        print(f"\nProcess list:\n{procs}")
         
     except Exception as e:
         print(f"Error: {e}")
