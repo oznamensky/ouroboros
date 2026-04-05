@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Отладка запуска MTProxy - запуск вручную и просмотр вывода.
+"""
 import paramiko
 import time
 
@@ -6,63 +9,98 @@ HOST = "91.108.237.229"
 USERNAME = "root"
 PASSWORD = "kYyA08DTsHxn1P"
 
-def run_ssh_command(client, command):
+def run_ssh_raw(command, client):
+    """Выполнить команду и вернуть полный вывод."""
     stdin, stdout, stderr = client.exec_command(command)
     exit_status = stdout.channel.recv_exit_status()
-    output = stdout.read().decode().strip()
-    error = stderr.read().decode().strip()
-    return exit_status, output, error
+    out = stdout.read().decode()
+    err = stderr.read().decode()
+    return exit_status, out, err
 
 def main():
+    print("=== Отладка запуска MTProxy ===\n")
+    
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
     try:
         client.connect(HOST, username=USERNAME, password=PASSWORD, timeout=10)
         
-        # Generate secret
-        status, secret, err = run_ssh_command(client, "openssl rand -hex 16")
-        print(f"Secret: {secret}")
+        # Остановка всех процессов
+        print("1. Остановка всех MTProxy процессов...")
+        run_ssh_raw("pkill -f mtproto-proxy 2>/dev/null || true", client)
+        time.sleep(1)
         
-        # Create config file
-        print("\n=== Creating config file ===")
-        config_content = f"tg:{secret}:19196:0"
-        config_cmd = f"echo '{config_content}' > /root/mtproxy.conf"
-        status, out, err = run_ssh_command(client, config_cmd)
-        print(f"Config created: {config_content}")
+        # Генерируем secret
+        print("2. Генерация secret...")
+        status, secret, err = run_ssh_raw("openssl rand -hex 16", client)
+        secret = secret.strip()
+        print(f"   Secret: {secret}\n")
         
-        print("\n=== Test with config file ===")
-        cmd = f"cd /root/mtproxy && timeout 10 ./objs/bin/mtproto-proxy -p 19196 /root/mtproxy.conf 2>&1"
-        status, out, err = run_ssh_command(client, cmd)
-        print(f"Status: {status}")
-        print(f"Output:\n{out[:1000]}")
+        # Проверяем существование бинарника
+        print("3. Проверка бинарника MTProxy...")
+        status, ls_out, err = run_ssh_raw("ls -la /root/mtproxy-tls/objs/bin/mtproto-proxy 2>&1", client)
+        print(f"   {ls_out}\n")
         
-        print("\n=== Test with -D flag ===")
-        cmd = f"cd /root/mtproxy && timeout 10 ./objs/bin/mtproto-proxy -p 19196 -D google.com /root/mtproxy.conf 2>&1"
-        status, out, err = run_ssh_command(client, cmd)
-        print(f"Status: {status}")
-        print(f"Output:\n{out[:1000]}")
+        # Проверяем директорию
+        print("4. Проверка директории MTProxy...")
+        status, ls_out, err = run_ssh_raw("ls -la /root/mtproxy-tls/ 2>&1 | head -20", client)
+        print(f"   {ls_out}\n")
         
-        print("\n=== Test daemonize with config ===")
-        cmd = f"cd /root/mtproxy && nohup ./objs/bin/mtproto-proxy -p 19196 -D google.com /root/mtproxy.conf > /root/mtproxy.log 2>&1 &"
-        status, out, err = run_ssh_command(client, cmd)
-        print(f"Status: {status}")
+        # Запуск вручную в интерактивном режиме (без -d)
+        print("5. Попытка запуска (без демонизации)...")
+        cmd = f"""
+cd /root/mtproxy-tls && \
+./objs/bin/mtproto-proxy \
+  -p443 \
+  -H443 \
+  -S{secret} \
+  -f \
+  -l/root/mtproxy_test.log \
+  /root/mtproxy_443.conf \
+  2>&1 &
+PID=$!
+sleep 3
+kill $PID 2>/dev/null || true
+echo "Process started with PID: $PID"
+"""
+        status, out, err = run_ssh_raw(cmd, client)
+        print(f"   Exit code: {status}")
+        print(f"   Output: {out[:500] if out else '(пусто)'}")
+        print(f"   Error: {err[:500] if err else '(пусто)'}\n")
         
-        time.sleep(2)
+        # Проверяем лог
+        print("6. Проверка логов...")
+        status, logs, err = run_ssh_raw("cat /root/mtproxy_test.log 2>&1", client)
+        print(f"   Логи:\n{logs if logs else '(пусто)'}\n")
         
-        print("\n=== Check if running ===")
-        status, procs, err = run_ssh_command(client, "ps aux | grep mtproto-proxy | grep -v grep")
-        print(f"Process list:\n{procs}")
+        # Пробуем другой подход - запуск без конфига
+        print("7. Попытка запуска без конфига (просто порт 443)...")
+        cmd = f"""
+cd /root/mtproxy-tls && \
+timeout 5 ./objs/bin/mtproto-proxy \
+  -p443 \
+  -H443 \
+  -S{secret} \
+  -f \
+  2>&1 || echo "Command finished"
+"""
+        status, out, err = run_ssh_raw(cmd, client)
+        print(f"   Exit code: {status}")
+        print(f"   Output: {out[:1000] if out else '(пусто)'}")
+        print(f"   Error: {err[:500] if err else '(пусто)'}\n")
         
-        print("\n=== Check logs ===")
-        status, logs, err = run_ssh_command(client, "cat /root/mtproxy.log 2>/dev/null || echo 'No log file'")
-        print(f"Logs:\n{logs[:1000]}")
+        # Проверяем, есть ли слушающие порты
+        print("8. Проверка всех слушающих портов...")
+        status, ports, err = run_ssh_raw("ss -tulpn | grep LISTEN", client)
+        print(f"   {ports}\n")
+        
+        client.close()
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Ошибка: {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        client.close()
 
 if __name__ == "__main__":
     main()
