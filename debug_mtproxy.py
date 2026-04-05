@@ -23,29 +23,39 @@ def main():
         status, secret, err = run_ssh_command(client, "openssl rand -hex 16")
         print(f"Secret: {secret}")
         
-        print("\n=== Test 1: No -d flag ===")
-        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} 2>&1"
-        status, out, err = run_ssh_command(client, cmd)
-        print(f"Status: {status}")
-        print(f"Output:\n{out[:500]}")
+        # Create config file
+        print("\n=== Creating config file ===")
+        config_content = f"tg:{secret}:19196:0"
+        config_cmd = f"echo '{config_content}' > /root/mtproxy.conf"
+        status, out, err = run_ssh_command(client, config_cmd)
+        print(f"Config created: {config_content}")
         
-        print("\n=== Test 2: With -d 1 ===")
-        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} -d 1 2>&1"
+        print("\n=== Test with config file ===")
+        cmd = f"cd /root/mtproxy && timeout 10 ./objs/bin/mtproto-proxy -p 19196 /root/mtproxy.conf 2>&1"
         status, out, err = run_ssh_command(client, cmd)
         print(f"Status: {status}")
-        print(f"Output:\n{out[:500]}")
+        print(f"Output:\n{out[:1000]}")
         
-        print("\n=== Test 3: With --daemonize ===")
-        cmd = f"cd /root/mtproxy && timeout 5 ./objs/bin/mtproto-proxy -p 19196 -S {secret} --daemonize 2>&1"
+        print("\n=== Test with -D flag ===")
+        cmd = f"cd /root/mtproxy && timeout 10 ./objs/bin/mtproto-proxy -p 19196 -D google.com /root/mtproxy.conf 2>&1"
         status, out, err = run_ssh_command(client, cmd)
         print(f"Status: {status}")
-        print(f"Output:\n{out[:500]}")
+        print(f"Output:\n{out[:1000]}")
         
-        print("\n=== Test 4: Check if binary works at all ===")
-        cmd = f"cd /root/mtproxy && ./objs/bin/mtproto-proxy 2>&1 | head -10"
+        print("\n=== Test daemonize with config ===")
+        cmd = f"cd /root/mtproxy && nohup ./objs/bin/mtproto-proxy -p 19196 -D google.com /root/mtproxy.conf > /root/mtproxy.log 2>&1 &"
         status, out, err = run_ssh_command(client, cmd)
         print(f"Status: {status}")
-        print(f"Output:\n{out}")
+        
+        time.sleep(2)
+        
+        print("\n=== Check if running ===")
+        status, procs, err = run_ssh_command(client, "ps aux | grep mtproto-proxy | grep -v grep")
+        print(f"Process list:\n{procs}")
+        
+        print("\n=== Check logs ===")
+        status, logs, err = run_ssh_command(client, "cat /root/mtproxy.log 2>/dev/null || echo 'No log file'")
+        print(f"Logs:\n{logs[:1000]}")
         
     except Exception as e:
         print(f"Error: {e}")
