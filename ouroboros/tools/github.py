@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 from typing import Any, Dict, List, Optional
 import urllib.request
@@ -57,7 +58,6 @@ def _get_repo_slug(ctx: ToolContext) -> str:
                 r"https://github\.com/([^/]+)/([^\.]+)",
                 r"git://github\.com/([^/]+)/([^\.]+)",
             ]:
-                import re
                 match = re.match(pattern, url)
                 if match:
                     return f"{match.group(1)}/{match.group(2)}"
@@ -154,7 +154,7 @@ def _list_issues_api(ctx: ToolContext, state: str = "open", labels: str = "", li
     lines = [f"**{len(issues)} {state} issue(s):**\n"]
     for issue in issues:
         labels_str = ", ".join(l.get("name", "") for l in issue.get("labels", []))
-        author = issue.get("author", {}).get("login", "unknown")
+        author = issue.get("user", {}).get("login", "unknown")
         lines.append(
             f"- **#{issue['number']}** {issue['title']}"
             f" (by @{author}{', labels: ' + labels_str if labels_str else ''})"
@@ -189,7 +189,7 @@ def _get_issue_api(ctx: ToolContext, number: int) -> str:
         return f"⚠️ Failed to parse issue JSON: {response[:500]}"
     
     labels_str = ", ".join(l.get("name", "") for l in issue.get("labels", []))
-    author = issue.get("author", {}).get("login", "unknown")
+    author = issue.get("user", {}).get("login", "unknown")
     
     lines = [
         f"## Issue #{issue['number']}: {issue['title']}",
@@ -211,7 +211,7 @@ def _get_issue_api(ctx: ToolContext, number: int) -> str:
             if comments:
                 lines.append(f"\n**Comments ({len(comments)}):**")
                 for c in comments[:10]:  # limit to 10 most recent
-                    c_author = c.get("author", {}).get("login", "unknown")
+                    c_author = c.get("user", {}).get("login", "unknown")
                     c_body = (c.get("body") or "").strip()[:500]
                     lines.append(f"\n@{c_author}:\n{c_body}")
         except json.JSONDecodeError:
@@ -434,10 +434,10 @@ def _close_issue_cli(ctx: ToolContext, number: int, comment: str = "") -> str:
         return "⚠️ issue number must be positive"
 
     if comment and comment.strip():
-        # Add comment first
-        result = _comment_on_issue_cli(ctx, number, comment)
-        if result.startswith("⚠️"):
-            return result
+        # Add comment first, then close
+        comment_result = _comment_on_issue_cli(ctx, number, comment)
+        if comment_result.startswith("⚠️"):
+            return comment_result
 
     args = ["issue", "close", str(number)]
     raw = _gh_cmd(args, ctx)
@@ -451,93 +451,74 @@ def _create_issue_cli(ctx: ToolContext, title: str, body: str = "", labels: str 
     if not title or not title.strip():
         return "⚠️ Issue title cannot be empty."
 
-    # Use --flag=value form to prevent argument injection
-    args = ["issue", "create", f"--title={title}"]
+    args = ["issue", "create", "--title", title]
     if body:
-        # Pass body via stdin to prevent argument injection
-        args.append("--body-file=-")
-        raw = _gh_cmd(args, ctx, input_data=body)
-    else:
-        raw = _gh_cmd(args, ctx)
-
+        args.extend(["--body", body])
     if labels:
-        # For existing issue, add labels separately
-        if not raw.startswith("⚠️"):
-            # Extract issue number from URL in raw output
-            import re
-            match = re.search(r'/issues/(\d+)', raw)
-            if match:
-                issue_num = int(match.group(1))
-                label_args = ["issue", "edit", str(issue_num), f"--add-label={labels}"]
-                _gh_cmd(label_args, ctx)
+        for label in labels.split(","):
+            args.extend(["--label", label.strip()])
 
+    raw = _gh_cmd(args, ctx)
     if raw.startswith("⚠️"):
         return raw
+
+    # Extract issue number from URL or response
+    # gh CLI returns the issue URL
     return f"✅ Issue created: {raw}"
 
 
 # ---------------------------------------------------------------------------
-# Wrapper Functions with Fallback
+# Unified Functions with Automatic Fallback
 # ---------------------------------------------------------------------------
 
 def _list_issues(ctx: ToolContext, state: str = "open", labels: str = "", limit: int = 20) -> str:
     """List GitHub issues - tries CLI first, falls back to API."""
     # Try CLI first
-    raw = _gh_cmd(["issue", "list", "--help"], ctx)
-    if raw.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
+    result = _list_issues_cli(ctx, state, labels, limit)
+    if result.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
         # Fall back to API
         return _list_issues_api(ctx, state, labels, limit)
-    
-    # Use CLI
-    return _list_issues_cli(ctx, state, labels, limit)
+    return result
 
 
 def _get_issue(ctx: ToolContext, number: int) -> str:
     """Get a single issue - tries CLI first, falls back to API."""
     # Try CLI first
-    raw = _gh_cmd(["issue", "view", "--help"], ctx)
-    if raw.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
+    result = _get_issue_cli(ctx, number)
+    if result.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
         # Fall back to API
         return _get_issue_api(ctx, number)
-    
-    # Use CLI
-    return _get_issue_cli(ctx, number)
+    return result
 
 
 def _comment_on_issue(ctx: ToolContext, number: int, body: str) -> str:
     """Add a comment to an issue - tries CLI first, falls back to API."""
     # Try CLI first
-    raw = _gh_cmd(["issue", "comment", "--help"], ctx)
-    if raw.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
+    result = _comment_on_issue_cli(ctx, number, body)
+    if result.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
         # Fall back to API
         return _comment_on_issue_api(ctx, number, body)
-    
-    # Use CLI
-    return _comment_on_issue_cli(ctx, number, body)
+    return result
 
 
 def _close_issue(ctx: ToolContext, number: int, comment: str = "") -> str:
     """Close an issue - tries CLI first, falls back to API."""
     # Try CLI first
-    raw = _gh_cmd(["issue", "close", "--help"], ctx)
-    if raw.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
+    result = _close_issue_cli(ctx, number, comment)
+    if result.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
         # Fall back to API
         return _close_issue_api(ctx, number, comment)
-    
-    # Use CLI
-    return _close_issue_cli(ctx, number, comment)
+    return result
 
 
 def _create_issue(ctx: ToolContext, title: str, body: str = "", labels: str = "") -> str:
     """Create a new GitHub issue - tries CLI first, falls back to API."""
     # Try CLI first
-    raw = _gh_cmd(["issue", "create", "--help"], ctx)
-    if raw.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
+    result = _create_issue_cli(ctx, title, body, labels)
+    if result.startswith("⚠️ GH_ERROR: `gh` CLI not found."):
         # Fall back to API
         return _create_issue_api(ctx, title, body, labels)
-    
-    # Use CLI
-    return _create_issue_cli(ctx, title, body, labels)
+    return result
 
 
 # ---------------------------------------------------------------------------
