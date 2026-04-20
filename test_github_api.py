@@ -1,34 +1,27 @@
 #!/usr/bin/env python3
-import os
+"""Test GitHub API fallback."""
+
 import sys
-import urllib.request
-import json
+import os
+sys.path.insert(0, '.')
 
-token = os.environ.get('GITHUB_TOKEN')
-if not token:
-    print("No GITHUB_TOKEN found")
-    sys.exit(1)
+# Set environment variables
+os.environ['GITHUB_USER'] = 'oznamensky'
+os.environ['GITHUB_REPO'] = 'ouroboros'
 
-# Test direct API call
-endpoint = '/repos/oznamensky/ouroboros/issues?state=open&per_page=5'
-url = f'https://api.github.com{endpoint}'
-headers = {
-    'Authorization': f'token {token}',
-    'Accept': 'application/vnd.github.v3+json',
-    'User-Agent': 'Ouroboros-GitHub-Tool/1.0',
-}
-req = urllib.request.Request(url, headers=headers, method='GET')
-try:
-    with urllib.request.urlopen(req, timeout=10) as response:
-        print(f'Status: {response.status}')
-        body = response.read().decode('utf-8')
-        print(f'Response length: {len(body)}')
-        data = json.loads(body)
-        print(f'Number of issues: {len(data)}')
-        for issue in data:
-            print(f'  #{issue["number"]}: {issue["title"]}')
-except urllib.error.HTTPError as e:
-    print(f'HTTP Error: {e.code} {e.reason}')
-    print(f'Response: {e.read().decode("utf-8")[:500]}')
-except Exception as e:
-    print(f'Error: {e}')
+from ouroboros.tools.github import _list_issues_api, _github_api_request, _get_repo_slug
+from unittest.mock import Mock
+
+# Create a mock context
+ctx = Mock()
+ctx.repo_dir = '.'
+
+# Test the API
+print("Testing _list_issues_api...")
+result = _list_issues_api(ctx, 'open', '', 20)
+print("API Result:", result)
+
+# Test _github_api_request directly
+print("\nTesting _github_api_request...")
+response = _github_api_request(ctx, 'GET', '/repos/oznamensky/ouroboros/issues?state=open&per_page=20')
+print("Response:", response)
